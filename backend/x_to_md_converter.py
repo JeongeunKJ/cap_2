@@ -70,16 +70,16 @@ def save_markdown(output_text: str, output_path: str):
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(output_text)
 
-if __name__ == "__main__":
-    input_file = "example.json"  # 수정 가능
-    output_file = os.path.splitext(input_file)[0] + ".md"
+# if __name__ == "__main__":
+#     input_file = "example.json"  # 수정 가능
+#     output_file = os.path.splitext(input_file)[0] + ".md"
 
-    if input_file.endswith(('.csv', '.xlsx')):
-        markdown = convert_table_to_markdown(input_file)
-    elif input_file.endswith('.json'):
-        markdown = convert_json_to_markdown(input_file)
-    else:
-        raise ValueError("지원되지 않는 파일 형식입니다.")
+#     if input_file.endswith(('.csv', '.xlsx')):
+#         markdown = convert_table_to_markdown(input_file)
+#     elif input_file.endswith('.json'):
+#         markdown = convert_json_to_markdown(input_file)
+#     else:
+#         raise ValueError("지원되지 않는 파일 형식입니다.")
 
-    save_markdown(markdown, output_file)
-    print(f"✅ Markdown 파일이 생성되었습니다: {output_file}")
+#     save_markdown(markdown, output_file)
+#     print(f"✅ Markdown 파일이 생성되었습니다: {output_file}")

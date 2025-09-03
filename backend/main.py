@@ -1,10 +1,12 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 import os
 import tempfile
+import uuid
 from x_to_md_converter import convert_table_to_markdown, convert_json_to_markdown
-from md_to_x_converter import convert_markdown_to_format 
+from md_to_x_converter import convert_markdown_to_format
+
 app = FastAPI()
 
 # CORS 허용
@@ -16,13 +18,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# @app.get("/")
-# async def root():
-#     return {"message": "Hello from FastAPI"}
+OUTPUT_DIR = "./output"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+OUTPUT_MD_PATH = os.path.join(OUTPUT_DIR, "output.md")
+
 
 @app.post("/api/convert")
 async def convert_file(file: UploadFile = File(...)):
-    # 임시 파일 저장
     suffix = os.path.splitext(file.filename)[1]
     if suffix not in [".csv", ".xlsx", ".json"]:
         raise HTTPException(status_code=400, detail="지원하지 않는 파일 형식입니다.")
@@ -38,30 +40,48 @@ async def convert_file(file: UploadFile = File(...)):
             markdown = convert_json_to_markdown(tmp_path)
         else:
             raise HTTPException(status_code=400, detail="파일 변환 실패")
+
+        # ✅ 변환된 md를 서버에 저장
+        with open(OUTPUT_MD_PATH, "w", encoding="utf-8") as f:
+            f.write(markdown)
+
     finally:
         os.remove(tmp_path)
 
-    return JSONResponse(content = {"markdown": markdown})
+    return JSONResponse(content={"markdown": markdown})
+
 
 @app.get("/api/download")
 def download_file():
-    file_path = "./output/output.md"  # 실제 마크다운 파일 경로
-    if not os.path.exists(file_path):
+    """서버에 저장된 md 파일 다운로드"""
+    if not os.path.exists(OUTPUT_MD_PATH):
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(path=file_path, filename="converted.md", media_type='text/markdown')
+    return FileResponse(
+        path=OUTPUT_MD_PATH, 
+        filename="converted.md", 
+        media_type="application/octet-stream")
+
 
 @app.post("/api/export")
-async def export_file(markdown: str = Form(...), format: str = Form(...)):
+async def export_file(format: str = Form(...)):
     """
-    마크다운 문자열을 원하는 포맷(format)으로 변환하여 파일로 제공
-    지원 포맷 예: html, pdf, json, csv 등
+    서버에 저장된 output.md 파일을 다른 포맷으로 변환
     """
-    if format not in ["html", "pdf", "csv", "json"]:
+    if not os.path.exists(OUTPUT_MD_PATH):
+        raise HTTPException(status_code=404, detail="Markdown 파일이 존재하지 않습니다.")
+
+    if format not in ["html", "pdf", "csv", "json", "docx", "xlsx"]:
         raise HTTPException(status_code=400, detail="지원하지 않는 포맷입니다.")
 
     try:
-        output_path = convert_markdown_to_format(markdown, format)  # 구현 필요
+        # 저장된 md 파일을 읽어서 변환
+        with open(OUTPUT_MD_PATH, "r", encoding="utf-8") as f:
+            markdown = f.read()
+
+        output_path = convert_markdown_to_format(markdown, format)
         filename = os.path.basename(output_path)
+
+
         return FileResponse(path=output_path, filename=filename, media_type="application/octet-stream")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -70,3 +90,4 @@ async def export_file(markdown: str = Form(...), format: str = Form(...)):
 @app.get("/")
 async def read_root():
     return {"message": "Markdown Viewer API is running"}
+

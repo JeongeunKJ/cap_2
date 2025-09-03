@@ -32,23 +32,26 @@ function Home() {
 
   const handleDownload = async () => {
     try {
+      const formData = new FormData();
+      formData.append('markdown', markdown);
+      formData.append('format', selectedFormat);
+
       const res = await axios.post(
-        `http://localhost:8000/api/download`,
-        {
-          markdown,
-          format: selectedFormat,
-        },
-        {
-          responseType: 'blob', // 파일 다운로드를 위해 중요
-        }
+        `http://localhost:8000/api/export`,  // ✅ export 엔드포인트로 수정
+        formData,
+        { responseType: 'blob' } // 파일 다운로드
       );
 
       const blob = new Blob([res.data], { type: res.headers['content-type'] });
       const url = window.URL.createObjectURL(blob);
+
       const a = document.createElement('a');
       a.href = url;
       a.download = `converted.${selectedFormat}`;
+      document.body.appendChild(a);
       a.click();
+      a.remove();
+
       window.URL.revokeObjectURL(url);
     } catch (err) {
       alert('다운로드 실패!');
@@ -61,9 +64,12 @@ function Home() {
       <h2>📄 파일 업로드 → 📘 Markdown 변환기</h2>
       <input type="file" accept=".csv,.xlsx,.json" onChange={handleFileChange} />
       {loading && <p>⏳ 변환 중...</p>}
-      {/* <div style={{marginTop: 30, border:'1px solid #ddd', padding: 20, }}>
+
+      {/* 작성된 내용 표시 */}
+      <div style={{ marginTop: 30, border: '1px solid #ddd', padding: 20 }}>
         <ReactMarkdown>{markdown}</ReactMarkdown>
-      </div> */}
+      </div>
+
       <MarkdownViewer content={markdown} />
 
       {markdown && (
@@ -77,10 +83,9 @@ function Home() {
             >
               <option value="pdf">PDF</option>
               <option value="html">HTML</option>
-              <option value="docx">Word</option>
+              <option value="docx">docx</option>
               <option value="csv">CSV</option>
               <option value="json">JSON</option>
-              <option value="pptx">PowerPoint</option>
             </select>
           </label>
           <button onClick={handleDownload} style={{ marginLeft: 20 }}>

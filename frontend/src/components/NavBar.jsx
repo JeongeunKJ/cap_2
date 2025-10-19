@@ -188,7 +188,58 @@ function NavBar() {
                     </Link>
                 </div>
             </div>
-
+            {/* 관리자 버튼 */}
+            <div style={{ marginTop: '8px', display: 'flex', justifyContent: 'center' }}>
+              <Link 
+                to="/admin" 
+                onClick={() => handleTabClick('/admin')}
+                style={{
+                    position: 'relative',
+                    padding: '8px 16px',
+                    borderRadius: '10px',
+                    fontWeight: '600',
+                    textDecoration: 'none',
+                    transition: 'all 0.3s ease',
+                    transform: 'scale(1)',
+                    background: activeTab === '/admin' 
+                        ? 'linear-gradient(135deg, #10b981, #059669)' 
+                        : 'transparent',
+                    color: activeTab === '/admin' ? 'white' : '#065f46',
+                    boxShadow: activeTab === '/admin' 
+                        ? '0 8px 25px rgba(16, 185, 129, 0.25)' 
+                        : 'none',
+                    border: '1px solid rgba(16,185,129,0.2)'
+                }}
+                onMouseEnter={(e) => {
+                    e.target.style.transform = 'scale(1.05)';
+                    if (activeTab !== '/admin') {
+                        e.target.style.backgroundColor = '#d1fae5';
+                        e.target.style.color = '#065f46';
+                    }
+                }}
+                onMouseLeave={(e) => {
+                    e.target.style.transform = 'scale(1)';
+                    if (activeTab !== '/admin') {
+                        e.target.style.backgroundColor = 'transparent';
+                        e.target.style.color = '#065f46';
+                    }
+                }}
+              >
+                관리자
+                {activeTab === '/admin' && (
+                    <div style={{
+                        position: 'absolute',
+                        bottom: '-4px',
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        width: '8px',
+                        height: '8px',
+                        backgroundColor: '#10b981',
+                        borderRadius: '50%'
+                    }}></div>
+                )}
+              </Link>
+            </div>
         </div>
     );
 }

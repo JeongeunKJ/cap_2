@@ -1,4 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form
+from pydantic import BaseModel
+from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 import os
@@ -7,8 +9,8 @@ import uuid
 import pandas as pd
 import json
 from datetime import datetime
-from x_to_md_converter import convert_table_to_markdown, convert_json_to_markdown
-from md_to_x_converter import convert_markdown_to_format
+from .x_to_md_converter import convert_table_to_markdown, convert_json_to_markdown
+from .md_to_x_converter import convert_markdown_to_format
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from joinkey.analyze_pseudokey import analyze_table
@@ -34,8 +36,31 @@ OUTPUT_MD_PATH = os.path.join(OUTPUT_DIR, "output.md")
 JOIN_PROJECTS_DIR = "./join_projects"
 os.makedirs(JOIN_PROJECTS_DIR, exist_ok=True)
 
-# 결합 프로젝트 저장용 (실제로는 DB를 사용해야 하지만 임시로 메모리에 저장)
-join_projects_db = []
+# 결합 프로젝트 저장용 (실제로는 DB를 사용해야 하지만 임시로 파일에 저장)
+join_projects_db = []  # 프로세스 생명주기 동안만 유지, 파일과 동기화 보조용
+
+def _load_projects_from_file() -> list:
+    projects_file = os.path.join(JOIN_PROJECTS_DIR, "projects.json")
+    if os.path.exists(projects_file):
+        try:
+            with open(projects_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"프로젝트 파일 로드 실패: {e}")
+    return []
+
+def _save_projects_to_file(projects: list) -> None:
+    projects_file = os.path.join(JOIN_PROJECTS_DIR, "projects.json")
+    try:
+        with open(projects_file, "w", encoding="utf-8") as f:
+            json.dump(projects, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        print(f"프로젝트 파일 저장 실패: {e}")
+
+class ReviewPayload(BaseModel):
+    reviewStatus: str  # approved | rejected
+    reviewer: Optional[str] = None
+    reason: Optional[str] = None
 
 
 @app.post("/api/convert")
@@ -219,19 +244,25 @@ async def join_files(
             "files": saved_files,  # 실제 저장된 파일들만 포함
             "joinKeys": final_join_keys,
             "status": "진행 중",
+            "review": {
+                "status": "pending",  # pending | approved | rejected
+                "reviewer": None,
+                "reason": None,
+                "decidedAt": None
+            },
             "progress": 0,
             "createdAt": datetime.now().isoformat(),
             "outputFile": None
         }
+        # 기존 파일에서 로드 후 append (덮어쓰기 방지)
+        existing = _load_projects_from_file()
+        # 프로세스 메모리 배열도 동기화 시도 (간단히 재할당)
+        global join_projects_db
+        join_projects_db = existing.copy()
         join_projects_db.append(project_info)
-        # JSON 파일에도 저장
+        # 파일로 저장
         os.makedirs(JOIN_PROJECTS_DIR, exist_ok=True)
-        projects_file = os.path.join(JOIN_PROJECTS_DIR, "projects.json")
-        try:
-            with open(projects_file, "w", encoding="utf-8") as f:
-                json.dump(join_projects_db, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"프로젝트 정보 저장 실패: {e}")
+        _save_projects_to_file(join_projects_db)
         return JSONResponse(content={
             "message": f"프로젝트 '{projectName}'가 성공적으로 등록되었습니다.",
             "projectId": project_info["id"],
@@ -542,15 +573,8 @@ async def get_join_projects():
     """
     try:
         # JSON 파일에서 프로젝트 정보 로드
-        projects_file = os.path.join(JOIN_PROJECTS_DIR, "projects.json")
-        
-        if os.path.exists(projects_file):
-            with open(projects_file, "r", encoding="utf-8") as f:
-                projects = json.load(f)
-            return JSONResponse(content={"projects": projects})
-        else:
-            # 파일이 없으면 메모리에서 반환
-            return JSONResponse(content={"projects": join_projects_db})
+        projects = _load_projects_from_file()
+        return JSONResponse(content={"projects": projects})
             
     except Exception as e:
         print(f"프로젝트 목록 조회 오류: {e}")
@@ -643,4 +667,50 @@ async def get_file_preview(project_id: str, file_name: str):
 @app.get("/")
 async def read_root():
     return {"message": "Markdown Viewer API is running"}
+
+# =============== Admin APIs ===============
+
+@app.get("/api/admin/join-requests")
+async def admin_list_join_requests(status: Optional[str] = None):
+    """관리자용 결합 요청 목록 조회 (status 필터: pending/approved/rejected)"""
+    projects = _load_projects_from_file()
+    if status:
+        filtered = [p for p in projects if p.get("review", {}).get("status") == status]
+    else:
+        filtered = projects
+    # 최신 생성일 순으로 정렬
+    filtered.sort(key=lambda p: p.get("createdAt", ""), reverse=True)
+    return JSONResponse(content={"projects": filtered})
+
+
+@app.patch("/api/admin/join-requests/{project_id}")
+async def admin_update_join_request(project_id: str, payload: ReviewPayload):
+    """관리자 승인/반려 처리"""
+    if payload.reviewStatus not in ("approved", "rejected"):
+        raise HTTPException(status_code=400, detail="reviewStatus는 'approved' 또는 'rejected' 여야 합니다.")
+
+    projects = _load_projects_from_file()
+    found = False
+    for p in projects:
+        if str(p.get("id")) == str(project_id):
+            p.setdefault("review", {})
+            p["review"]["status"] = payload.reviewStatus
+            p["review"]["reviewer"] = payload.reviewer
+            p["review"]["reason"] = payload.reason
+            p["review"]["decidedAt"] = datetime.now().isoformat()
+            # 처리 상태도 동기화(선택): 승인 시 '승인 완료', 반려 시 '반려'
+            p["status"] = "승인 완료" if payload.reviewStatus == "approved" else "반려"
+            found = True
+            break
+
+    if not found:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+
+    _save_projects_to_file(projects)
+
+    # 메모리 캐시도 갱신
+    global join_projects_db
+    join_projects_db = projects
+
+    return JSONResponse(content={"message": "상태가 업데이트되었습니다.", "project": p})
 

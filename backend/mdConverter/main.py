@@ -9,8 +9,8 @@ import uuid
 import pandas as pd
 import json
 from datetime import datetime
-from .x_to_md_converter import convert_table_to_markdown, convert_json_to_markdown
-from .md_to_x_converter import convert_markdown_to_format
+from mdConverter.x_to_md_converter import convert_table_to_markdown, convert_json_to_markdown
+from mdConverter.md_to_x_converter import convert_markdown_to_format
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from joinkey.analyze_pseudokey import analyze_table
@@ -128,7 +128,12 @@ async def export_file(format: str = Form(...)):
 
         return FileResponse(path=output_path, filename=filename, media_type="application/octet-stream")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"결과 파일 생성 중 오류가 발생했습니다: {str(e)}")
+
+
+@app.get("/")
+async def read_root():
+    return {"message": "Markdown Viewer API is running"}
 
 
 
@@ -574,11 +579,44 @@ async def get_join_projects():
     try:
         # JSON 파일에서 프로젝트 정보 로드
         projects = _load_projects_from_file()
-        return JSONResponse(content={"projects": projects})
+
+        # 디스크에 실제 폴더가 없는 항목은 정리(사용자가 수동으로 폴더를 지운 경우 대비)
+        filtered = []
+        changed = False
+        for p in projects:
+            pid = p.get("id")
+            if pid and os.path.exists(os.path.join(JOIN_PROJECTS_DIR, pid)):
+                filtered.append(p)
+            else:
+                changed = True
+
+        if changed:
+            _save_projects_to_file(filtered)
+
+        return JSONResponse(content={"projects": filtered})
             
     except Exception as e:
         print(f"프로젝트 목록 조회 오류: {e}")
         return JSONResponse(content={"projects": join_projects_db})
+
+
+@app.delete("/api/join-projects/{project_id}")
+async def delete_join_project(project_id: str):
+    """프로젝트 메타데이터와 디렉토리를 함께 삭제"""
+    try:
+        projects = _load_projects_from_file()
+        new_projects = [p for p in projects if p.get("id") != project_id]
+        _save_projects_to_file(new_projects)
+
+        # 프로젝트 디렉토리 삭제
+        project_dir = os.path.join(JOIN_PROJECTS_DIR, project_id)
+        if os.path.exists(project_dir):
+            import shutil
+            shutil.rmtree(project_dir, ignore_errors=True)
+
+        return JSONResponse(content={"ok": True, "deletedId": project_id})
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"삭제 중 오류가 발생했습니다: {str(e)}")
 
 
 @app.get("/api/file-preview/{project_id}/{file_name}")
@@ -714,3 +752,56 @@ async def admin_update_join_request(project_id: str, payload: ReviewPayload):
 
     return JSONResponse(content={"message": "상태가 업데이트되었습니다.", "project": p})
 
+##여기!!!! 결합로직!!!! 넣어주삼!
+@app.get("/api/admin/join-requests/{project_id}/result")
+async def get_join_result(project_id: str):
+    """
+    TODO:
+    결합 결과 파일을 다운로드 (현재는 임시 더미 파일)
+    추후 실제 결합 로직으로 교체 예정
+    """
+    try:
+        projects = _load_projects_from_file()
+        project = None
+        for p in projects:
+            if str(p.get("id")) == str(project_id):
+                project = p
+                break
+        
+        if not project:
+            raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+        
+        # TODO: 추후 실제 결합 로직으로 교체
+        # 현재는 임시 더미 파일 생성
+        
+        # 임시 결과 파일 생성
+        result_filename = f"{project.get('projectName', 'result')}_{project_id[:8]}_결합결과.csv"
+        result_path = os.path.join(OUTPUT_DIR, result_filename)
+        
+        # 더미 데이터 생성 (실제로는 여기에 결합 로직이 들어갈 예정)
+        dummy_data = pd.DataFrame({
+            '이름': ['김철수', '이영희', '박민수', '최지영'],
+            '나이': [28, 32, 25, 29],
+            '직업': ['개발자', '디자이너', '학생', '마케터'],
+            '결합일시': [datetime.now().strftime("%Y-%m-%d %H:%M:%S")] * 4,
+            '프로젝트ID': [project_id[:8]] * 4
+        })
+        
+        dummy_data.to_csv(result_path, index=False, encoding='utf-8-sig')
+        
+        return FileResponse(
+            path=result_path,
+            filename=result_filename,
+            media_type='text/csv'
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"결과 파일 생성 오류: {e}")
+        raise HTTPException(status_code=500, detail=f"결과 파일 생성 중 오류가 발생했습니다: {str(e)}")
+
+
+@app.get("/")
+async def read_root():
+    return {"message": "Markdown Viewer API is running"}

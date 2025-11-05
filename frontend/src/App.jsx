@@ -1,4 +1,4 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import Home from "./pages/Home";
 import Analysis from "./pages/Analysis";
 import Join from "./pages/join";
@@ -24,7 +24,10 @@ function App() {
         marginRight: '-50vw'
       }}>
         <Routes>
-          <Route path="/" element={<Home />} />
+          {/* 루트는 결합 페이지로 리디렉트 */}
+          <Route path="/" element={<Navigate to="/join" replace />} />
+          {/* 변환 페이지는 /convert로 이동 */}
+          <Route path="/convert" element={<Home />} />
           <Route path="/analysis" element={<Analysis />} />
           <Route path="/join" element={<Join />} />
           <Route path="/admin" element={<AdminDashboard />} />

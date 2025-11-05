@@ -14,33 +14,23 @@ const Analysis = () => {
         const response = await fetch('http://localhost:8000/api/join-projects');
         const data = await response.json();
         
-        // 백엔드 데이터를 프론트엔드 형식으로 변환
-        const formattedProjects = data.projects.map(project => ({
-          id: project.id,
-          projectName: project.projectName,
-          joinKeys: project.joinKeys.map(key => {
-            if (typeof key === 'string') {
-              return key;
-            } else if (key.column && key.matchedColumn) {
-              return `${key.column} ↔ ${key.matchedColumn}`;
-            } else if (key.dataA_column && key.dataB_column) {
-              return `${key.dataA_column} ↔ ${key.dataB_column}`;
-            } else {
-              return key.column_name || key.column || '결합키';
-            }
-          }),
-          progress: project.progress || 0,
-          status: project.status === "분석 완료" ? "completed" : 
-                  project.status === "진행 중" ? "processing" : "pending",
-          createdAt: new Date(project.createdAt).toLocaleString('ko-KR'),
-          fileCount: project.files ? project.files.length : 0,
-          resultFile: project.outputFile || null,
-          resultSize: project.outputFile ? "N/A" : null,
-          processingType: project.processingType || "일반",
-          files: project.files || []
-        }));
+        // 백엔드가 {projects: [...]} 형태로 반환하므로 data.projects 사용
+        const projectsArray = data.projects || [];
         
-        setJoinProjects(formattedProjects);
+        // 백엔드 데이터를 프론트엔드 형식으로 변환
+      const formattedProjects = projectsArray.map(project => ({
+        id: project.id,
+        projectName: project.projectName,
+        createdAt: new Date(project.createdAt).toLocaleDateString('ko-KR'),
+        fileCount: project.files.length,
+        joinKeys: project.joinKeys,
+        reviewStatus: project.review?.status || 'pending',
+        backendStatus: project.status,
+        status: project.status === '승인 완료' || project.review?.status === 'approved' ? 'completed'
+              : project.status === '분석 완료' ? 'completed' 
+              : project.status === '진행 중' ? 'processing' 
+              : 'pending'
+      }));        setJoinProjects(formattedProjects);
       } catch (error) {
         console.error('결합 프로젝트 데이터 가져오기 실패:', error);
         // 오류 발생 시 빈 배열로 설정
@@ -329,18 +319,25 @@ const Analysis = () => {
                     gap: '8px'
                   }}>
                     {(project.joinKeys && project.joinKeys.length > 0) ? (
-                      project.joinKeys.map((key, index) => (
-                        <span key={index} style={{
-                          backgroundColor: '#667eea',
-                          color: 'white',
-                          padding: '4px 12px',
-                          borderRadius: '12px',
-                          fontSize: '0.8rem',
-                          fontWeight: '500'
-                        }}>
-                          {key}
-                        </span>
-                      ))
+                      project.joinKeys.map((key, index) => {
+                        // key가 객체인 경우 (예: {column: 'id', matchedColumn: 'user_id'})
+                        const displayText = typeof key === 'object' 
+                          ? `${key.column || key.dataA_column || ''} ↔ ${key.matchedColumn || key.dataB_column || ''}`
+                          : key;
+                        
+                        return (
+                          <span key={index} style={{
+                            backgroundColor: '#667eea',
+                            color: 'white',
+                            padding: '4px 12px',
+                            borderRadius: '12px',
+                            fontSize: '0.8rem',
+                            fontWeight: '500'
+                          }}>
+                            {displayText}
+                          </span>
+                        );
+                      })
                     ) : (
                       <span style={{
                         backgroundColor: '#e5e7eb',
@@ -354,58 +351,67 @@ const Analysis = () => {
                   </div>
                 </div>
 
-                {/* 진행률 바 */}
-                <div style={{ marginBottom: '16px' }}>
-                  <div style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '8px'
-                  }}>
-                    <span style={{
-                      fontSize: '0.9rem',
-                      color: '#374151',
-                      fontWeight: '500'
-                    }}>
-                      ⚡ 진행률
-                    </span>
-                    <span style={{
-                      fontSize: '0.9rem',
-                      color: '#667eea',
-                      fontWeight: '600'
-                    }}>
-                      none
-                    </span>
-                  </div>
-                  <div style={{
-                    width: '100%',
-                    height: '8px',
-                    backgroundColor: '#e5e7eb',
-                    borderRadius: '4px',
-                    overflow: 'hidden'
-                  }}>
-                    <div style={{
-                      width: `0%`,
-                      height: '100%',
-                      background: 'linear-gradient(90deg, #667eea, #764ba2)',
-                      transition: 'width 0.3s ease'
-                    }} />
-                  </div>
-                </div>
-
                 {/* 결과물 정보 */}
                 <div style={{
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center'
                 }}>
-                  <div>
-                    <div style={{
-                      color: '#6b7280',
-                      fontSize: '0.9rem'
-                    }}>
-                      결과물: none
-                    </div>
+                  <div style={{
+                    color: '#6b7280',
+                    fontSize: '0.9rem'
+                  }}>
+                    {project.status === 'completed' && project.reviewStatus === 'approved' ? (
+                      <>
+                        결과물: 
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            // 결과 파일 다운로드
+                            fetch(`http://localhost:8000/api/admin/join-requests/${project.id}/result`)
+                              .then(response => response.blob())
+                              .then(blob => {
+                                const url = window.URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = url;
+                                a.download = `${project.projectName}_result.csv`;
+                                document.body.appendChild(a);
+                                a.click();
+                                window.URL.revokeObjectURL(url);
+                                document.body.removeChild(a);
+                              })
+                              .catch(error => {
+                                console.error('결과 파일 다운로드 실패:', error);
+                                alert('결과 파일 다운로드에 실패했습니다.');
+                              });
+                          }}
+                          style={{
+                            marginLeft: '8px',
+                            padding: '6px 16px',
+                            backgroundColor: '#667eea',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '0.85rem',
+                            fontWeight: '500',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.target.style.backgroundColor = '#5568d3';
+                            e.target.style.transform = 'scale(1.05)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.backgroundColor = '#667eea';
+                            e.target.style.transform = 'scale(1)';
+                          }}
+                        >
+                          📥 다운로드
+                        </button>
+                      </>
+                    ) : (
+                      '결과물: none'
+                    )}
                   </div>
                 </div>
               </div>

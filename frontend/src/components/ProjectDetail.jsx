@@ -245,7 +245,6 @@ A5: 모니터    B5: 300      C5: 8`;
             <div style={{ color: '#6b7280', fontSize: '0.9rem', lineHeight: '1.6' }}>
               <div>처리 유형: {project.processingType}</div>
               <div>파일 수: {project.fileCount}개</div>
-              <div>진행률: none</div>
             </div>
           </div>
 
@@ -264,7 +263,56 @@ A5: 모니터    B5: 300      C5: 8`;
               💾 결과물
             </h3>
             <div style={{ color: '#6b7280', fontSize: '0.9rem' }}>
-              none
+              {project.status === 'completed' && project.reviewStatus === 'approved' ? (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    // 결과 파일 다운로드
+                    fetch(`http://localhost:8000/api/admin/join-requests/${project.id}/result`)
+                      .then(response => response.blob())
+                      .then(blob => {
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `${project.projectName}_result.csv`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                      })
+                      .catch(error => {
+                        console.error('결과 파일 다운로드 실패:', error);
+                        alert('결과 파일 다운로드에 실패했습니다.');
+                      });
+                  }}
+                  style={{
+                    padding: '10px 20px',
+                    backgroundColor: '#0ea5e9',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '10px',
+                    fontSize: '0.9rem',
+                    fontWeight: '500',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                  onMouseEnter={(e) => {
+                    e.target.style.backgroundColor = '#0284c7';
+                    e.target.style.transform = 'scale(1.05)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.target.style.backgroundColor = '#0ea5e9';
+                    e.target.style.transform = 'scale(1)';
+                  }}
+                >
+                  📥 결과 파일 다운로드
+                </button>
+              ) : (
+                'none'
+              )}
             </div>
           </div>
         </div>
@@ -297,19 +345,26 @@ A5: 모니터    B5: 300      C5: 8`;
                 gap: '12px',
                 marginBottom: '16px'
               }}>
-                {project.joinKeys.map((key, index) => (
-                  <div key={index} style={{
-                    backgroundColor: '#0ea5e9',
-                    color: 'white',
-                    padding: '8px 16px',
-                    borderRadius: '20px',
-                    fontSize: '0.9rem',
-                    fontWeight: '500',
-                    boxShadow: '0 2px 4px rgba(14, 165, 233, 0.2)'
-                  }}>
-                    {key}
-                  </div>
-                ))}
+                {project.joinKeys.map((key, index) => {
+                  // key가 객체인 경우 (예: {column: 'id', matchedColumn: 'user_id'})
+                  const displayText = typeof key === 'object' 
+                    ? `${key.column || key.dataA_column || ''} ↔ ${key.matchedColumn || key.dataB_column || ''}`
+                    : key;
+                  
+                  return (
+                    <div key={index} style={{
+                      backgroundColor: '#0ea5e9',
+                      color: 'white',
+                      padding: '8px 16px',
+                      borderRadius: '20px',
+                      fontSize: '0.9rem',
+                      fontWeight: '500',
+                      boxShadow: '0 2px 4px rgba(14, 165, 233, 0.2)'
+                    }}>
+                      {displayText}
+                    </div>
+                  );
+                })}
               </div>
               <div style={{
                 color: '#0c4a6e',

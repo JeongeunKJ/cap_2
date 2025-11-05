@@ -38,6 +38,25 @@ function AdminDashboard() {
     }
   };
 
+  const downloadResult = async (id, projectName) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/admin/join-requests/${id}/result`);
+      if (!res.ok) throw new Error('다운로드 실패');
+      
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${projectName}_결합결과.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      setError('결과 파일 다운로드 실패');
+    }
+  };
+
   return (
     <div style={{ padding: 24 }}>
       <h2>관리자: 결합 요청 관리</h2>
@@ -63,6 +82,21 @@ function AdminDashboard() {
               <div style={{ display: 'flex', gap: 8 }}>
                 <button onClick={() => updateStatus(r.id, 'approved')} disabled={r.review?.status==='approved'}>승인</button>
                 <button onClick={() => updateStatus(r.id, 'rejected')} disabled={r.review?.status==='rejected'}>반려</button>
+                <button 
+                  onClick={() => downloadResult(r.id, r.projectName)} 
+                  style={{ 
+                    backgroundColor: '#10b981', 
+                    color: 'white',
+                    border: 'none',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = '#059669'}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = '#10b981'}
+                >
+                  📥 결과 다운로드
+                </button>
               </div>
             </div>
           </div>

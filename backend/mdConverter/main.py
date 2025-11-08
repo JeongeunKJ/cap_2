@@ -12,10 +12,9 @@ from datetime import datetime
 from mdConverter.x_to_md_converter import convert_table_to_markdown, convert_json_to_markdown
 from mdConverter.md_to_x_converter import convert_markdown_to_format
 import sys
+import hashlib
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from joinkey.analyze_pseudokey import analyze_table
-from joinkey.cardinality_check import analyze_dataframe
-from joinkey.join_key_finder import normalize_colname, standardize_columns
+from . import processor
 
 app = FastAPI()
 
@@ -286,236 +285,22 @@ def find_join_keys_for_dataframes(df_a: pd.DataFrame, df_b: pd.DataFrame,
     """
     두 데이터프레임에서 결합키 후보를 찾는 함수
     """
-    try:
-        print(f"=== 결합키 분석 시작 ===")
-        print(f"일관성 임계값: {consistency_threshold}")
-        print(f"고유성 임계값: {min_unique_ratio}")
-        
-        # 데이터프레임 기본 검증
-        if df_a.empty or df_b.empty:
-            print("❌ 빈 데이터프레임이 전달됨")
-            return {'error': '빈 데이터프레임', 'join_key_candidates': [], 'dataA_candidates': [], 'dataB_candidates': [], 'total_common_keys': 0, 'recommended_keys': []}
-        
-        # joinkey 스크립트들을 직접 로드
-        joinkey_path = os.path.join(os.path.dirname(__file__), '..', 'joinkey')
-        sys.path.insert(0, joinkey_path)
-        print(f"joinkey 경로: {joinkey_path}")
-        
-        try:
-            from joinkey.analyze_pseudokey import analyze_table
-            from joinkey.cardinality_check import analyze_dataframe
-            from joinkey.join_key_finder import normalize_colname, standardize_columns
-            print("✅ joinkey 모듈들 성공적으로 로드됨")
-        except ImportError as e:
-            print(f"❌ joinkey 모듈 로드 실패: {e}")
-            return {'error': f'모듈 로드 실패: {e}', 'join_key_candidates': [], 'dataA_candidates': [], 'dataB_candidates': [], 'total_common_keys': 0, 'recommended_keys': []}
-        
-        # 1. 컬럼명 표준화
-        print(f"=== 컬럼명 표준화 ===")
-        print(f"DataA 원본 컬럼: {list(df_a.columns)}")
-        print(f"DataB 원본 컬럼: {list(df_b.columns)}")
-        
-        df_a_std, mapping_a = standardize_columns(df_a)
-        df_b_std, mapping_b = standardize_columns(df_b)
-        
-        print(f"DataA 표준화 매핑:")
-        for orig, std in mapping_a.items():
-            print(f"  '{orig}' -> '{std}'")
-        
-        print(f"DataB 표준화 매핑:")
-        for orig, std in mapping_b.items():
-            print(f"  '{orig}' -> '{std}'")
-        
-        # 2. dataA 일관성 및 고유성 검사
-        candidates_a = []
-        consistency_results_a = analyze_table(df_a)
-        print(f"=== DataA 일관성 분석 결과 ===")
-        print(f"DataA 컬럼 수: {len(df_a.columns)}")
-        print(f"DataA 행 수: {len(df_a)}")
-        print(f"DataA 컬럼 목록: {list(df_a.columns)}")
-        print(f"일관성 분석 결과 키들: {list(consistency_results_a.keys())}")
-        
-        if 'candidates' in consistency_results_a:
-            print(f"후보 컬럼 수: {len(consistency_results_a['candidates'])}")
-        else:
-            print("❌ 'candidates' 키가 결과에 없습니다!")
-            print(f"실제 결과: {consistency_results_a}")
-            
-        if 'candidates' in consistency_results_a and 'columns' in consistency_results_a:
-            for col_name in consistency_results_a['candidates']:
-                if col_name in consistency_results_a['columns']:
-                    col_info = consistency_results_a['columns'][col_name]
-                    final_score = col_info.get('score', 0)
-                    print(f"  컬럼 '{col_name}': 일관성 점수 {final_score:.2f}")
-                else:
-                    print(f"  컬럼 '{col_name}': 정보 없음")
-                    continue
-                
-                if final_score >= consistency_threshold:
-                    if col_name in df_a.columns:
-                        # 고유성 검사 (더 완화된 조건)
-                        unique_ratio = df_a[col_name].nunique() / len(df_a)
-                        print(f"    -> 고유성 비율: {unique_ratio:.3f} (기준: {min_unique_ratio})")
-                        
-                        # 고유성 검사를 더 관대하게 - 최소 조건만 확인
-                        is_potential_key = (
-                            unique_ratio >= min_unique_ratio or  # 원본 조건
-                            df_a[col_name].nunique() >= 2 or     # 최소 2개 이상 고유값
-                            col_name in ['계좌번호', '주민번호', '계좌', '주민등록번호', 'id', 'ID', 'Id']  # 명시적 키 컬럼명
-                        )
-                        
-                        if is_potential_key:
-                            normalized_name = normalize_colname(col_name)
-                            print(f"    -> ✅ 결합키 후보로 선정!")
-                            print(f"       원본명: '{col_name}' -> 표준명: '{normalized_name}'")
-                            candidates_a.append({
-                                'original_name': col_name,
-                                'normalized_name': normalized_name,
-                                'consistency_score': final_score,
-                                'unique_ratio': unique_ratio
-                            })
-                        else:
-                            print(f"    -> ❌ 고유성 부족으로 제외")
-                else:
-                    print(f"    -> ❌ 일관성 점수 부족으로 제외 (기준: {consistency_threshold})")
-        
-        print(f"\n=== DataB 일관성 분석 결과 ===")
-        print(f"DataB 컬럼 수: {len(df_b.columns)}")
-        print(f"DataB 행 수: {len(df_b)}")
-        print(f"DataB 컬럼 목록: {list(df_b.columns)}")
-        
-        # 3. dataB 일관성 및 고유성 검사
-        candidates_b = []
-        consistency_results_b = analyze_table(df_b)
-        print(f"일관성 분석 결과 키들: {list(consistency_results_b.keys())}")
-        
-        if 'candidates' in consistency_results_b:
-            print(f"후보 컬럼 수: {len(consistency_results_b['candidates'])}")
-        else:
-            print("❌ 'candidates' 키가 결과에 없습니다!")
-            print(f"실제 결과: {consistency_results_b}")
-            
-        if 'candidates' in consistency_results_b and 'columns' in consistency_results_b:
-            for col_name in consistency_results_b['candidates']:
-                if col_name in consistency_results_b['columns']:
-                    col_info = consistency_results_b['columns'][col_name]
-                    final_score = col_info.get('score', 0)
-                    print(f"  컬럼 '{col_name}': 일관성 점수 {final_score:.2f}")
-                else:
-                    print(f"  컬럼 '{col_name}': 정보 없음")
-                    continue
-                
-                if final_score >= consistency_threshold:
-                    if col_name in df_b.columns:
-                        # 고유성 검사 (더 완화된 조건)
-                        unique_ratio = df_b[col_name].nunique() / len(df_b)
-                        print(f"    -> 고유성 비율: {unique_ratio:.3f} (기준: {min_unique_ratio})")
-                        
-                        # 고유성 검사를 더 관대하게 - 최소 조건만 확인
-                        is_potential_key = (
-                            unique_ratio >= min_unique_ratio or  # 원본 조건
-                            df_b[col_name].nunique() >= 2 or     # 최소 2개 이상 고유값
-                            col_name in ['계좌번호', '주민번호', '계좌', '주민등록번호', 'id', 'ID', 'Id']  # 명시적 키 컬럼명
-                        )
-                        
-                        if is_potential_key:
-                            normalized_name = normalize_colname(col_name)
-                            print(f"    -> ✅ 결합키 후보로 선정! (정규화명: '{normalized_name}')")
-                            candidates_b.append({
-                                'original_name': col_name,
-                                'normalized_name': normalized_name,
-                                'consistency_score': final_score,
-                                'unique_ratio': unique_ratio
-                            })
-                        else:
-                            print(f"    -> ❌ 고유성 부족으로 제외")
-                else:
-                    print(f"    -> ❌ 일관성 점수 부족으로 제외 (기준: {consistency_threshold})")
-        
-        print(f"\n=== 공통 결합키 매칭 ===")
-        print(f"DataA 후보: {len(candidates_a)}개")
-        print(f"DataB 후보: {len(candidates_b)}개")
-        
-        # 4. 공통 결합키 후보 찾기 (정규화된 컬럼명으로 매칭)
-        common_keys = []
-        for cand_a in candidates_a:
-            for cand_b in candidates_b:
-                if cand_a['normalized_name'] == cand_b['normalized_name']:
-                    print(f"\n매칭 발견: '{cand_a['original_name']}' ↔ '{cand_b['original_name']}'")
-                    print(f"  정규화명: '{cand_a['normalized_name']}')")
-                    # 실제 데이터 값들의 유사성도 체크
-                    sample_values_a = set(str(v) for v in df_a[cand_a['original_name']].dropna().head(100))
-                    sample_values_b = set(str(v) for v in df_b[cand_b['original_name']].dropna().head(100))
-                    
-                    intersection = sample_values_a.intersection(sample_values_b)
-                    print(f"  데이터 유사성 분석:")
-                    print(f"    DataA 샘플값 수: {len(sample_values_a)}")
-                    print(f"    DataB 샘플값 수: {len(sample_values_b)}")
-                    print(f"    공통값 수: {len(intersection)}")
-                    
-                    # 공통값이 없어도 같은 의미 컬럼이면 결합키로 간주
-                    if len(intersection) > 0 or cand_a['normalized_name'] in ['account', 'resident_id', 'name']:
-                        if len(intersection) > 0:
-                            similarity_score = len(intersection) / min(len(sample_values_a), len(sample_values_b))
-                            print(f"    유사도 점수: {similarity_score:.3f}")
-                            print(f"    공통값 예시: {list(intersection)[:5]}")
-                        else:
-                            # 공통값이 없어도 표준화된 컬럼명이 같으면 의미적 유사도 부여
-                            similarity_score = 0.8 if cand_a['normalized_name'] in ['account', 'resident_id', 'name'] else 0.1
-                            print(f"    의미적 유사도 점수: {similarity_score:.3f} (표준명 매칭)")
-                        
-                        # 추천 조건을 더 완화
-                        is_recommended = (
-                            similarity_score > 0.05 or  # 유사도 기준을 0.1 -> 0.05로 낮춤
-                            cand_a['normalized_name'] in ['account', 'resident_id', 'name', 'phone', 'gender', 'address']  # 주요 컬럼은 무조건 추천
-                        )
-                        print(f"    추천 여부: {'✅ 추천' if is_recommended else '❌ 비추천'}")
-                        print(f"      유사도 조건: {similarity_score:.3f} > 0.1 = {'✅' if similarity_score > 0.1 else '❌'}")
-                        print(f"      고유성 조건: min({cand_a['unique_ratio']:.3f}, {cand_b['unique_ratio']:.3f}) > {min_unique_ratio} = {'✅' if min(cand_a['unique_ratio'], cand_b['unique_ratio']) > min_unique_ratio else '❌'}")
-                        
-                        common_keys.append({
-                            'dataA_column': cand_a['original_name'],
-                            'dataB_column': cand_b['original_name'],
-                            'normalized_name': cand_a['normalized_name'],
-                            'dataA_consistency_score': cand_a['consistency_score'],
-                            'dataB_consistency_score': cand_b['consistency_score'],
-                            'dataA_unique_ratio': cand_a['unique_ratio'],
-                            'dataB_unique_ratio': cand_b['unique_ratio'],
-                            'value_similarity_score': similarity_score,
-                            'recommended': is_recommended
-                        })
-                    else:
-                        print(f"    공통값이 없어서 결합키에서 제외")
-        
-        # 추천 점수로 정렬
-        common_keys.sort(key=lambda x: (x['recommended'], x['value_similarity_score']), reverse=True)
-        
-        print(f"\n=== 최종 결과 ===")
-        print(f"총 공통 결합키 후보: {len(common_keys)}개")
-        recommended_keys = [k for k in common_keys if k['recommended']]
-        print(f"추천 결합키: {len(recommended_keys)}개")
-        
-        for i, key in enumerate(common_keys, 1):
-            status = "🔥 추천" if key['recommended'] else "⚠️  일반"
-            print(f"{i}. {status}: {key['dataA_column']} ↔ {key['dataB_column']} (유사도: {key['value_similarity_score']:.3f})")
-        
-        return {
-            'join_key_candidates': common_keys,
-            'dataA_candidates': candidates_a,
-            'dataB_candidates': candidates_b,
-            'total_common_keys': len(common_keys),
-            'recommended_keys': recommended_keys
-        }
-        
-    except Exception as e:
-        return {
-            'error': f"결합키 분석 중 오류 발생: {str(e)}",
-            'join_key_candidates': [],
-            'dataA_candidates': [],
-            'dataB_candidates': [],
-            'total_common_keys': 0,
-            'recommended_keys': []
-        }
+    return processor.find_join_keys_for_dataframes(df_a, df_b, consistency_threshold, min_unique_ratio)
+
+
+def _compute_hash_series(df: pd.DataFrame, columns: list) -> pd.Series:
+    """주어진 컬럼 목록의 값을 이어붙여 sha256 해시 시리즈를 반환한다.
+    누락 컬럼은 빈 문자열로 취급한다.
+    """
+    return processor._compute_hash_series(df, columns)
+
+
+def perform_join_for_project(project_id: str) -> str:
+    """프로젝트의 파일을 읽어 지정된 결합키로 sha256 해시를 생성하고
+    동일한 해시값을 가진 행들끼리 inner join하여 CSV를 생성한다.
+    반환값: 생성된 결과 CSV의 절대 경로
+    """
+    return processor.perform_join_for_project(project_id)
 
 
 @app.post("/api/find-join-keys")
@@ -771,24 +556,30 @@ async def get_join_result(project_id: str):
         if not project:
             raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
         
-        # TODO: 추후 실제 결합 로직으로 교체
-        # 현재는 임시 더미 파일 생성
-        
-        # 임시 결과 파일 생성
-        result_filename = f"{project.get('projectName', 'result')}_{project_id[:8]}_결합결과.csv"
-        result_path = os.path.join(OUTPUT_DIR, result_filename)
-        
-        # 더미 데이터 생성 (실제로는 여기에 결합 로직이 들어갈 예정)
-        dummy_data = pd.DataFrame({
-            '이름': ['김철수', '이영희', '박민수', '최지영'],
-            '나이': [28, 32, 25, 29],
-            '직업': ['개발자', '디자이너', '학생', '마케터'],
-            '결합일시': [datetime.now().strftime("%Y-%m-%d %H:%M:%S")] * 4,
-            '프로젝트ID': [project_id[:8]] * 4
-        })
-        
-        dummy_data.to_csv(result_path, index=False, encoding='utf-8-sig')
-        
+        # 실제 결합 로직 실행: 이미 생성된 outputFile이 있으면 재사용,
+        # 없으면 perform_join_for_project를 호출하여 생성
+        result_path = project.get('outputFile')
+        if result_path and os.path.exists(result_path):
+            result_filename = os.path.basename(result_path)
+        else:
+            try:
+                result_path = perform_join_for_project(project_id)
+                result_filename = os.path.basename(result_path)
+            except Exception as join_err:
+                # 결합 실패 시 로그를 남기고, 기존 더미 결과로 폴백
+                print(f"결합 실행 실패 ({project_id}): {join_err}")
+                # 임시 결과 생성
+                result_filename = f"{project.get('projectName', 'result')}_{project_id[:8]}_결합결과.csv"
+                result_path = os.path.join(OUTPUT_DIR, result_filename)
+                dummy_data = pd.DataFrame({
+                    '이름': ['김철수', '이영희', '박민수', '최지영'],
+                    '나이': [28, 32, 25, 29],
+                    '직업': ['개발자', '디자이너', '학생', '마케터'],
+                    '결합일시': [datetime.now().strftime("%Y-%m-%d %H:%M:%S")] * 4,
+                    '프로젝트ID': [project_id[:8]] * 4
+                })
+                dummy_data.to_csv(result_path, index=False, encoding='utf-8-sig')
+
         return FileResponse(
             path=result_path,
             filename=result_filename,
@@ -800,6 +591,33 @@ async def get_join_result(project_id: str):
     except Exception as e:
         print(f"결과 파일 생성 오류: {e}")
         raise HTTPException(status_code=500, detail=f"결과 파일 생성 중 오류가 발생했습니다: {str(e)}")
+
+
+def _mask_string(s: str) -> str:
+    return processor._mask_string(s)
+
+
+def _numeric_range(val) -> str:
+    return processor._numeric_range(val)
+
+
+@app.post("/api/admin/join-requests/{project_id}/pseudonymize")
+async def admin_pseudonymize(project_id: str):
+    """프로젝트 결과 파일에 대해 가명처리(masking)를 수행하고 가명처리된 CSV를 반환한다.
+    기본적으로 프로젝트의 joinKeys로 지정된 컬럼들을 가명처리하며, 만약 joinKeys가 없으면
+    모든 문자열/숫자 컬럼을 대상으로 처리한다.
+    """
+    try:
+        pseudo_path = processor.pseudonymize_project(project_id)
+        pseudo_filename = os.path.basename(pseudo_path)
+        return FileResponse(path=pseudo_path, filename=pseudo_filename, media_type='text/csv')
+    except HTTPException:
+        raise
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+    except Exception as e:
+        print(f"가명처리 오류 (delegated): {e}")
+        raise HTTPException(status_code=500, detail=f"가명처리 중 오류가 발생했습니다: {e}")
 
 
 @app.get("/")

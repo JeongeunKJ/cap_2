@@ -573,5 +573,71 @@
     "progress": 100,
     "createdAt": "2025-11-09T00:43:33.597822",
     "outputFile": "./output/wf_346ffa29_결합결과.csv"
+  },
+  {
+    "id": "74c83171-0d34-42b5-ada7-51bae986654e",
+    "projectName": "wkdkdkdk",
+    "processingType": "join",
+    "files": [
+      "dataA.csv",
+      "dataB.csv"
+    ],
+    "joinKeys": [
+      {
+        "dataA_column": "이름",
+        "dataB_column": "이름",
+        "normalized_name": "name",
+        "dataA_consistency_score": 80.0,
+        "dataB_consistency_score": 80.0,
+        "dataA_unique_ratio": 0.834,
+        "dataB_unique_ratio": 0.81,
+        "value_similarity_score": 1.0,
+        "recommended": true
+      },
+      {
+        "dataA_column": "주민등록번호",
+        "dataB_column": "주민등록번호",
+        "normalized_name": "resident_id",
+        "dataA_consistency_score": 100.0,
+        "dataB_consistency_score": 100.0,
+        "dataA_unique_ratio": 1.0,
+        "dataB_unique_ratio": 1.0,
+        "value_similarity_score": 1.0,
+        "recommended": true
+      },
+      {
+        "dataA_column": "전화번호",
+        "dataB_column": "전화번호",
+        "normalized_name": "phone",
+        "dataA_consistency_score": 98.84,
+        "dataB_consistency_score": 98.78,
+        "dataA_unique_ratio": 1.0,
+        "dataB_unique_ratio": 1.0,
+        "value_similarity_score": 1.0,
+        "recommended": true
+      },
+      {
+        "dataA_column": "주소지",
+        "dataB_column": "주소지",
+        "normalized_name": "address",
+        "dataA_consistency_score": 70.27,
+        "dataB_consistency_score": 70.3,
+        "dataA_unique_ratio": 1.0,
+        "dataB_unique_ratio": 1.0,
+        "value_similarity_score": 1.0,
+        "recommended": true
+      }
+    ],
+    "status": "분석 완료",
+    "review": {
+      "status": "approved",
+      "reviewer": null,
+      "reason": null,
+      "decidedAt": "2025-11-09T00:50:17.283089"
+    },
+    "progress": 100,
+    "createdAt": "2025-11-09T00:50:11.363734",
+    "outputFile": "./output/wkdkdkdk_74c83171_결합결과.csv",
+    "pseudonymizedFile": "./output/wkdkdkdk_74c83171_결합결과_pseudonymized.csv"
   }
 ]

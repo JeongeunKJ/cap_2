@@ -772,8 +772,6 @@ const JoinModal = ({ isOpen, onClose }) => {
                     }}
                   >
                     <option value="join">📄 결합 신청</option>
-                    <option value="md-conversion">📝 마크다운 변환</option>
-                    <option value="format-conversion">🔄 형식 변환</option>
                   </select>
                 </div>
               </div>

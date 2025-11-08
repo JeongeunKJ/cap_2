@@ -57,6 +57,27 @@ function AdminDashboard() {
     }
   };
 
+  const pseudonymizeAndDownload = async (id, projectName) => {
+    try {
+      const res = await fetch(`http://localhost:8000/api/admin/join-requests/${id}/pseudonymize`, {
+        method: 'POST'
+      });
+      if (!res.ok) throw new Error('가명처리 다운로드 실패');
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${projectName}_가명처리결과.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      setError('가명처리 파일 다운로드 실패');
+    }
+  };
+
   return (
     <div style={{ padding: 24 }}>
       <h2>관리자: 결합 요청 관리</h2>
@@ -96,6 +117,21 @@ function AdminDashboard() {
                   onMouseLeave={(e) => e.target.style.backgroundColor = '#10b981'}
                 >
                   📥 결과 다운로드
+                </button>
+                <button 
+                  onClick={() => pseudonymizeAndDownload(r.id, r.projectName)}
+                  style={{
+                    backgroundColor: '#6366f1',
+                    color: 'white',
+                    border: 'none',
+                    padding: '6px 12px',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                  }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = '#4f46e5'}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = '#6366f1'}
+                >
+                  🔒 추가 가명처리
                 </button>
               </div>
             </div>
